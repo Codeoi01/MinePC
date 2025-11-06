@@ -9,25 +9,11 @@ jobs:
     timeout-minutes: 3600
 
     env:
+      # Only Tailscale auth key is needed as a secret
       TAILSCALE_AUTH_KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
 
     steps:
       - name: Configure Core RDP Settings
         shell: pwsh
         run: |
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0 -Force
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "SecurityLayer" -Value 0 -Force
-          netsh advfirewall firewall delete rule name="RDP-Tailscale" || Write-Host "No old rule to delete"
-          netsh advfirewall firewall add rule name="RDP-Tailscale" dir=in action=allow protocol=TCP localport=3389
-          Restart-Service -Name TermService -Force
-
-      - name: Create Admin User (auto-generate strong creds)
-        shell: pwsh
-        run: |
-          Add-Type -AssemblyName System.Web
-          $user = "rdpadmin" + (Get-Random -Maximum 9999)
-          $plainPass = [System.Web.Security.Membership]::GeneratePassword(12, 3)
-          $securePass = ConvertTo-SecureString $plainPass -AsPlainText -Force
-
-          New
+          Write-Host "Enabling Remote D
