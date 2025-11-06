@@ -9,10 +9,8 @@ jobs:
     timeout-minutes: 3600
 
     env:
-      # Provide these via GitHub Secrets
+      # Provide TAILSCALE_AUTH_KEY via GitHub Secrets
       TAILSCALE_AUTH_KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
-      ADMIN_USERNAME: ${{ secrets.ADMIN_USERNAME }}
-      ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
 
     steps:
       - name: Configure Core RDP Settings
@@ -31,31 +29,39 @@ jobs:
 
           Restart-Service -Name TermService -Force
 
-      - name: Create Admin User (uses GitHub Secrets)
+      - name: Create Admin User (auto-generate strong creds)
         shell: pwsh
         run: |
-          $user = $env:ADMIN_USERNAME
-          $plainPass = $env:ADMIN_PASSWORD
+          # Generate username and a password that meets Windows complexity rules
+          $user = "rdpadmin" + (Get-Random -Minimum 1000 -Maximum 9999)
 
-          if (-not $user -or -not $plainPass) {
-              Write-Error "ADMIN_USERNAME and ADMIN_PASSWORD must be provided as secrets."
-              exit 1
-          }
+          # Build a strong password: ensure uppercase, lowercase, digit, symbol and length >= 12
+          $upper = ([char[]](65..90) | Get-Random -Count 1) -join ''
+          $lower = ([char[]](97..122) | Get-Random -Count 1) -join ''
+          $digit = ([char[]](48..57) | Get-Random -Count 1) -join ''
+          $symbolPool = '!"#$%&''()*+,-./:;<=>?@[\]^_`{|}~'.ToCharArray()
+          $symbol = ($symbolPool | Get-Random -Count 1) -join ''
+          # remaining random chars to reach length 16
+          $all = ([char[]](65..90) + [char[]](97..122) + [char[]](48..57) + $symbolPool)
+          $remaining = -join ((1..12) | ForEach-Object { $all | Get-Random -Count 1 })
+          $pw = $upper + $lower + $digit + $symbol + $remaining
 
-          # If the user exists, remove and recreate to ensure password is the one we expect
+          # Convert to secure string and create the user (if exists remove first)
+          $securePass = ConvertTo-SecureString $pw -AsPlainText -Force
+
           if (Get-LocalUser -Name $user -ErrorAction SilentlyContinue) {
               Write-Host "User $user exists — removing to recreate."
-              Remove-LocalUser -Name $user -ErrorAction Continue
+              Remove-LocalUser -Name $user -ErrorAction SilentlyContinue
           }
 
-          $securePass = ConvertTo-SecureString $plainPass -AsPlainText -Force
-          New-LocalUser -Name $user -Password $securePass -AccountNeverExpires -PasswordNeverExpires -Description "RDP admin created by workflow"
+          New-LocalUser -Name $user -Password $securePass -AccountNeverExpires -PasswordNeverExpires -Description "Temp RDP admin created by workflow"
           Add-LocalGroupMember -Group "Administrators" -Member $user
           Add-LocalGroupMember -Group "Remote Desktop Users" -Member $user
 
-          # Export credentials to environment for later steps (note: this will be available to later steps only)
+          # Export and print credentials (they will appear in the job logs)
           Add-Content -Path $env:GITHUB_ENV -Value "RDP_USER=$user"
-          Add-Content -Path $env:GITHUB_ENV -Value "RDP_PASSWORD=$plainPass"
+          Add-Content -Path $env:GITHUB_ENV -Value "RDP_PASSWORD=$pw"
+          Write-Host "::notice title=RDP Credentials::Username: $user  Password: $pw"
 
           # Verify creation
           if (-not (Get-LocalUser -Name $user -ErrorAction SilentlyContinue)) {
@@ -76,7 +82,7 @@ jobs:
       - name: Start tailscaled service and bring Tailscale up
         shell: pwsh
         run: |
-          # Ensure service starts
+          # Ensure service starts (may already be running)
           sc.exe start tailscaled || Write-Host "tailscaled start returned nonzero or already running"
 
           # Authenticate the machine into your tailnet using the auth key
@@ -91,7 +97,7 @@ jobs:
               Write-Host "tailscale up returned nonzero; continuing to check IP"
           }
 
-          # Wait for an IP assignment
+          # Wait for an IP assignment (up to ~60s)
           $tsIP = $null
           for ($i=0; $i -lt 12 -and -not $tsIP; $i++) {
               $tsIP = & "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4 | Where-Object { $_ -match '^100\.' } | Select-Object -First 1
