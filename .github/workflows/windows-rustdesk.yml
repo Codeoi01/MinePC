@@ -1,0 +1,81 @@
+name: Windows GUI with RustDesk on GitHub Runner
+
+on:
+  workflow_dispatch:
+
+jobs:
+  rustdesk:
+    runs-on: windows-latest
+
+    steps:
+      - name: Startup
+        shell: powershell
+        run: |
+          Write-Host '=============================================='
+          Write-Host '✅ Starting RustDesk GUI environment'
+          Write-Host '✅ This will give you full desktop access'
+          Write-Host '=============================================='
+          Start-Sleep -Seconds 2
+
+      - name: Download RustDesk
+        shell: powershell
+        run: |
+          Write-Host 'Downloading RustDesk...'
+          Invoke-WebRequest `
+            -Uri "https://github.com/rustdesk/rustdesk/releases/latest/download/rustdesk-1.2.3-x86_64.exe" `
+            -OutFile "rustdesk.exe"
+
+      - name: Install RustDesk silently
+        shell: powershell
+        run: |
+          Write-Host 'Installing RustDesk...'
+          Start-Process ".\rustdesk.exe" -ArgumentList "/S" -Wait
+          Start-Sleep -Seconds 5
+
+      - name: Start RustDesk service
+        shell: powershell
+        run: |
+          Write-Host 'Starting RustDesk service...'
+          Start-Process "C:\Program Files\RustDesk\rustdesk.exe"
+          Start-Sleep -Seconds 8
+
+      - name: Extract RustDesk ID & Password
+        shell: powershell
+        run: |
+          Write-Host 'Fetching RustDesk ID...'
+
+          $idFile = "$env:APPDATA\RustDesk\id_ed25519.pub"
+          $pwFile = "$env:APPDATA\RustDesk\password.txt"
+
+          # Wait until files appear
+          $tries = 0
+          while (!(Test-Path $idFile) -and $tries -lt 10) {
+            Start-Sleep -Seconds 2
+            $tries++
+          }
+
+          $ID = Get-Content $idFile
+          $PW = Get-Content $pwFile
+
+          $out = @"
+RUSTDESK_ID=$ID
+RUSTDESK_PASS=$PW
+"@
+
+          $out | Out-File "./rustdesk_info.txt"
+
+          Write-Host "✅ RustDesk ID: $ID"
+          Write-Host "✅ RustDesk Password: $PW"
+
+      - name: Upload connection info
+        uses: actions/upload-artifact@v4
+        with:
+          name: rustdesk-credentials
+          path: ./rustdesk_info.txt
+
+      - name: Done
+        shell: powershell
+        run: |
+          Write-Host '✅ RustDesk is running.'
+          Write-Host '✅ Download rustdesk-credentials artifact.'
+          Write-Host '✅ Open RustDesk on your PC and connect using the ID + Password.'
