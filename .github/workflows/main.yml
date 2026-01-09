@@ -60,14 +60,6 @@ jobs:
 
           Write-Host "Admin user created"
 
-      - name: Install Google Chrome
-        shell: pwsh
-        run: |
-          Write-Host "Installing Google Chrome via winget"
-          winget install --id Google.Chrome -e --silent `
-            --accept-package-agreements `
-            --accept-source-agreements
-
       - name: Set Chrome as Default Browser
         shell: pwsh
         run: |
@@ -81,14 +73,6 @@ jobs:
 
           Set-ItemProperty $http ProgId ChromeHTML
           Set-ItemProperty $https ProgId ChromeHTML
-
-      - name: Install Developer Tools
-        shell: pwsh
-        run: |
-          Write-Host "Installing Node.js and Git"
-
-          winget install --id OpenJS.NodeJS.LTS -e --silent
-          winget install --id Git.Git -e --silent
 
       - name: Install Tailscale
         shell: pwsh
@@ -123,8 +107,7 @@ jobs:
           Write-Host "Tailscale IP : $env:TAILSCALE_IP"
           Write-Host "Username     : $env:RDP_USER"
           Write-Host "Password     : $env:RDP_PASSWORD"
-          Write-Host "Chrome installed and default"
-          Write-Host "Node.js and Git installed"
+          Write-Host "Chrome       : Set as default"
           Write-Host "================================"
 
           while ($true) {
