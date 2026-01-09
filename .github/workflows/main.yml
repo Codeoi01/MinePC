@@ -16,7 +16,9 @@ jobs:
         shell: pwsh
         run: |
           Write-Host "Enabling RDP"
-          Set-ItemProperty 'HKLM:\System\CurrentControlSet\Control\Terminal Server' `
+
+          Set-ItemProperty `
+            'HKLM:\System\CurrentControlSet\Control\Terminal Server' `
             -Name fDenyTSConnections -Value 0
 
           Set-ItemProperty `
@@ -28,21 +30,33 @@ jobs:
 
           Restart-Service TermService -Force
 
-      - name: Create Admin User (FIXED)
+      - name: Create Admin User (FINAL FIX)
         shell: pwsh
         run: |
           Write-Host "Creating admin user"
 
           $user = "rdpadmin$(Get-Random -Maximum 9999)"
-          $chars = 'abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%^&*'
-          $pass = -join (1..16 | ForEach-Object { $chars | Get-Random -Count 1 })
 
-          net user $user $pass /add
-          net localgroup administrators $user /add
-          net localgroup "Remote Desktop Users" $user /add
+          $securePassword = ConvertTo-SecureString `
+            ([Guid]::NewGuid().ToString("N") + "!Aa1") `
+            -AsPlainText -Force
+
+          New-LocalUser `
+            -Name $user `
+            -Password $securePassword `
+            -AccountNeverExpires `
+            -PasswordNeverExpires `
+            -Description "GitHub Actions RDP User"
+
+          Add-LocalGroupMember -Group "Administrators" -Member $user
+          Add-LocalGroupMember -Group "Remote Desktop Users" -Member $user
+
+          $plainPassword = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
+            [Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePassword)
+          )
 
           Add-Content $env:GITHUB_ENV "RDP_USER=$user"
-          Add-Content $env:GITHUB_ENV "RDP_PASSWORD=$pass"
+          Add-Content $env:GITHUB_ENV "RDP_PASSWORD=$plainPassword"
 
           Write-Host "Admin user created successfully"
 
@@ -50,6 +64,7 @@ jobs:
         shell: pwsh
         run: |
           Write-Host "Installing Google Chrome"
+
           $url = "https://www.google.com/chrome/install/375.126/chrome_installer.exe"
           $exe = "$env:TEMP\chrome.exe"
 
@@ -114,16 +129,16 @@ jobs:
           $ip = & "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4 | Select-Object -First 1
           Add-Content $env:GITHUB_ENV "TAILSCALE_IP=$ip"
 
-      - name: Show Access Info and Keep Alive
+      - name: Show Access Info and Keep Runner Alive
         shell: pwsh
         run: |
           Write-Host "================================"
           Write-Host "RDP READY"
-          Write-Host "Tailscale IP: $env:TAILSCALE_IP"
-          Write-Host "Username: $env:RDP_USER"
-          Write-Host "Password: $env:RDP_PASSWORD"
-          Write-Host "Chrome: Installed and Default"
-          Write-Host "Antigravity IDE: Installed"
+          Write-Host "Tailscale IP : $env:TAILSCALE_IP"
+          Write-Host "Username     : $env:RDP_USER"
+          Write-Host "Password     : $env:RDP_PASSWORD"
+          Write-Host "Chrome       : Installed (Default)"
+          Write-Host "Antigravity  : Installed"
           Write-Host "================================"
 
           while ($true) {
